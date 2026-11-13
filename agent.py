@@ -28,10 +28,16 @@ RULES = """You are a customer support agent for an electronics store.
 - If the customer asks for a human, try to calm them and help. Only hand over if they still insist after you have tried twice.
 - If the request is outside what you can do, say you will connect them to the right team."""
 
-response = client.models.generate_content(
+chat = client.chats.create(
     model="gemini-3.5-flash-lite",
-    contents="I am verified customer 1. Where is my laptop and why is it late?",
     config=types.GenerateContentConfig(
         tools=[get_orders], system_instruction=RULES),
 )
-print(response.text)
+
+print("Type 'quit' to stop.")
+while True:
+    message = input("You: ")
+    if message == "quit":
+        break
+    response = chat.send_message(message)
+    print("Agent:", response.text)
