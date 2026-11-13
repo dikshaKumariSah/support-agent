@@ -7,6 +7,6 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 response = client.models.generate_content(
     model="gemini-3.5-flash-lite",
-    contents="Say hello to a customer in one short, friendly sentence.",
+    contents="A customer says: 'My laptop is 3 days late and nobody tells me why!' Reply in two short, calm sentences.",
 )
 print(response.text)
