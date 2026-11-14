@@ -1,4 +1,5 @@
 import os
+import json
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -11,11 +12,13 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 # ---------- TOOLS ----------
 
 verified_customer_id = None
+tool_calls = []
 customer_messages = ""
 
 
 def verify_customer(name: str, phone: str, email: str) -> dict:
     """Verify the customer. Only call this AFTER the customer has confirmed their concern and has typed their name, phone and email. Never call it with made-up details."""
+    tool_calls.append("verify_customer")
     print(f"[TOOL] verify_customer called with: {name}, {phone}, {email}")
     if phone not in customer_messages or email not in customer_messages:
         return {"verified": False, "reason": "details_not_given", "note": "Ask the customer for their details. Never make them up."}
@@ -37,6 +40,7 @@ def verify_customer(name: str, phone: str, email: str) -> dict:
 
 def get_orders() -> list[dict]:
     """Get the verified customer's orders, with status, courier status and delay reason."""
+    tool_calls.append("get_orders")
     if verified_customer_id is None:
         return [{"error": "Customer not verified. Ask for name, phone and email first."}]
     with engine.connect() as conn:
@@ -45,6 +49,28 @@ def get_orders() -> list[dict]:
             {"cid": verified_customer_id},
         )
         return [dict(row._mapping) for row in rows]
+
+
+def get_plans() -> dict:
+    """Get the verified customer's membership and plans with amounts and dates.
+    Use for unknown charge questions. Only call after verification."""
+    tool_calls.append("get_plans")
+    print("[TOOL] get_plans called, verified id:", verified_customer_id)
+    if verified_customer_id is None:
+        return {"error": "Customer not verified"}
+    with engine.connect() as conn:
+        membership = conn.execute(
+            text("SELECT tier, status, last_payment_date, last_payment_amount, renewal_date "
+                 "FROM memberships WHERE customer_id = :cid"),
+            {"cid": verified_customer_id}).mappings().all()
+        plans = conn.execute(
+            text("SELECT type, source, start_date, end_date, price "
+                 "FROM plans WHERE customer_id = :cid"),
+            {"cid": verified_customer_id}).mappings().all()
+    print("[TOOL] get_plans found:", membership, plans)
+    result = {"membership": [dict(m) for m in membership],
+              "plans": [dict(p) for p in plans]}
+    return json.loads(json.dumps(result, default=str))
 
 
 COURIER_GUIDE = {
@@ -58,10 +84,37 @@ COURIER_GUIDE = {
 
 def explain_courier_status(status: str) -> str:
     """Get the approved plain-language meaning of a courier status. Always use this instead of explaining it yourself."""
+    tool_calls.append("explain_courier_status")
     return COURIER_GUIDE.get(status, "No approved explanation. Do not guess; just repeat the status.")
 
 
+def create_ticket(problem: str, tried_for_this_concern: str, reason: str, customer_mood: str, team: str) -> dict:
+    """Hand the conversation to a human team.
+    Call this when the request is outside what you can do, or the customer still insists on a human after you tried twice.
+    Never call this for an unknown charge if get_plans shows a matching amount. Explain that charge to the customer instead.
+
+    Rules for the brief:
+    - problem: use the customer's own words. Don't add details they didn't say.
+    - tried_for_this_concern: only what was tried for THIS concern. If nothing, write "Nothing yet".
+    - customer_mood: only if the customer clearly showed it. Otherwise write "Calm"."""
+    tool_calls.append("create_ticket")
+    print(f"[TOOL] create_ticket called for team: {team}")
+    brief = {
+        "problem": problem,
+        "tried": tried_for_this_concern,
+        "reason": reason,
+        "mood": customer_mood,
+        "team": team,
+    }
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("INSERT INTO tickets (customer_id, brief) VALUES (:cid, CAST(:brief AS JSONB)) RETURNING id"),
+            {"cid": verified_customer_id, "brief": json.dumps(brief)},
+        ).first()
+    return {"created": True, "ticket_id": row.id}
+
 # ---------- RULES ----------
+
 
 RULES = """You are Riya, a virtual assistant for ElectroMart, an electronics store.
 
@@ -81,7 +134,10 @@ Always:
 - For courier statuses, use only the meaning from explain_courier_status.
 - Never promise refunds, discounts or delivery dates.
 - Do not offer a human on your own. If the customer asks for one, try to help twice; hand over only if they still insist.
-- If the request is outside what you can do, say you will connect them to the right team."""
+- If the request is outside what you can do, call create_ticket for the right team. Only tell the customer it's passed on after the ticket is created. Tell them the team has the details, so they won't need to explain again.
+
+- Unknown charge: Unknown charges are in scope. Never create a ticket for them before calling get_plans.ask the amount and date first. Call get_plans and compare with last_payment_amount and price, and the payment or start dates. Amounts may include tax, so close amounts can match. If it matches, explain what the charge is for. If nothing matches, ask where they saw it. Email or text only: it may be a scam, so tell them not to click links or pay. Card statement and unauthorised: tell them to dispute it with their bank.
+"""
 
 # ---------- CHAT ----------
 
@@ -90,17 +146,18 @@ GREETING = "Thank you for contacting ElectroMart customer care. My name is Riya,
 chat = client.chats.create(
     model="gemini-3.5-flash-lite",
     config=types.GenerateContentConfig(
-        tools=[verify_customer, get_orders, explain_courier_status],
+        tools=[verify_customer, get_orders, get_plans,
+               explain_courier_status, create_ticket],
         system_instruction=RULES +
         "\n- You have already greeted the customer. Don't greet again.",
     ),
 )
-
-print("Agent:", GREETING)
-while True:
-    message = input("You: ")
-    customer_messages += " " + message
-    response = chat.send_message(message)
-    print("Agent:", response.text)
-    if "Have a great day ahead" in response.text:
-        break
+if __name__ == "__main__":
+    print("Agent:", GREETING)
+    while True:
+        message = input("You: ")
+        customer_messages += " " + message
+        response = chat.send_message(message)
+        print("Agent:", response.text)
+        if "Have a great day ahead" in response.text:
+            break
