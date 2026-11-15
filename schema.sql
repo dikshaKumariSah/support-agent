@@ -30,7 +30,8 @@ CREATE TABLE orders (
     expected_delivery DATE,
     status TEXT NOT NULL CHECK (status IN ('On the way', 'Rescheduled', 'Cancelled', 'Delivered')),
     courier_status TEXT,
-    delay_reason TEXT
+    delay_reason TEXT,
+    amount NUMERIC(10, 2)
 );
 
 CREATE TABLE services (

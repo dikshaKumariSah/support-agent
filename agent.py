@@ -52,7 +52,7 @@ def get_orders() -> list[dict]:
 
 
 def get_plans() -> dict:
-    """Get the verified customer's membership and plans with amounts and dates.
+    """Get the verified customer's membership, plans and purchases with amounts and dates.
     Use for unknown charge questions. Only call after verification."""
     tool_calls.append("get_plans")
     print("[TOOL] get_plans called, verified id:", verified_customer_id)
@@ -67,9 +67,14 @@ def get_plans() -> dict:
             text("SELECT type, source, start_date, end_date, price "
                  "FROM plans WHERE customer_id = :cid"),
             {"cid": verified_customer_id}).mappings().all()
-    print("[TOOL] get_plans found:", membership, plans)
+        purchases = conn.execute(
+            text("SELECT product, order_date, amount "
+                 "FROM orders WHERE customer_id = :cid"),
+            {"cid": verified_customer_id}).mappings().all()
+    print("[TOOL] get_plans found:", membership, plans, purchases)
     result = {"membership": [dict(m) for m in membership],
-              "plans": [dict(p) for p in plans]}
+              "plans": [dict(p) for p in plans],
+              "purchases": [dict(o) for o in purchases]}
     return json.loads(json.dumps(result, default=str))
 
 
@@ -136,7 +141,7 @@ Always:
 - Do not offer a human on your own. If the customer asks for one, try to help twice; hand over only if they still insist.
 - If the request is outside what you can do, call create_ticket for the right team. Only tell the customer it's passed on after the ticket is created. Tell them the team has the details, so they won't need to explain again.
 
-- Unknown charge: Unknown charges are in scope. Never create a ticket for them before calling get_plans.ask the amount and date first. Call get_plans and compare with last_payment_amount and price, and the payment or start dates. Amounts may include tax, so close amounts can match. If it matches, explain what the charge is for. If nothing matches, ask where they saw it. Email or text only: it may be a scam, so tell them not to click links or pay. Card statement and unauthorised: tell them to dispute it with their bank.
+- Unknown charge: Unknown charges are in scope. Never create a ticket for them before calling get_plans. Ask the amount and date first. If the customer only remembers roughly when (like "last year"), don't insist on an exact date. Call get_plans and compare with the membership last_payment_amount, plan price and purchase amount, and their payment, start or order dates. Customers often remember the price before tax, not the exact charge. Check everything in that period, find the closest amount near that date, then ask: "Was it this amount?" Only explain the charge after the customer confirms. If nothing matches, ask where they saw it. Email or text only: it may be a scam, so tell them not to click links or pay. Card statement and unauthorised: tell them to dispute it with their bank.
 """
 
 # ---------- CHAT ----------
