@@ -93,15 +93,19 @@ def explain_courier_status(status: str) -> str:
     return COURIER_GUIDE.get(status, "No approved explanation. Do not guess; just repeat the status.")
 
 
-def create_ticket(problem: str, tried_for_this_concern: str, reason: str, customer_mood: str, team: str) -> dict:
+def create_ticket(concern: str, problem: str, tried_for_this_concern: str, reason: str, customer_mood: str, team: str) -> dict:
     """Hand the conversation to a human team.
     Call this when the request is outside what you can do, or the customer still insists on a human after you tried twice.
     Never call this for an unknown charge if get_plans shows a matching amount. Explain that charge to the customer instead.
 
     Rules for the brief:
+    - concern: "unknown_charge" if the customer asks about a charge they don't recognise. Otherwise "other".
     - problem: use the customer's own words. Don't add details they didn't say.
     - tried_for_this_concern: only what was tried for THIS concern. If nothing, write "Nothing yet".
     - customer_mood: only if the customer clearly showed it. Otherwise write "Calm"."""
+    if concern == "unknown_charge" and "get_plans" not in tool_calls:
+        tool_calls.append("create_ticket_blocked")
+        return {"created": False, "error": "Call get_plans first and compare the charge before creating a ticket."}
     tool_calls.append("create_ticket")
     print(f"[TOOL] create_ticket called for team: {team}")
     brief = {
