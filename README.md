@@ -61,7 +61,8 @@ Gemini decides **which** tool to call. The tools themselves are normal Python me
 
 ```
 agent.py         Riya: RULES, Conversation class and its tools, command-line chat
-main.py          FastAPI app: /health, /customers, /customers/{id}/orders, /verify, /chat
+main.py          FastAPI app: /, /health, /customers, /customers/{id}/orders, /verify, /chat
+static/index.html  Chat page (plain HTML + JavaScript)
 schema.sql       Database tables
 test_agent.py    pytest tests
 requirements.txt Python packages
@@ -97,6 +98,7 @@ requirements.txt Python packages
 ```bash
 uvicorn main:app --reload
 ```
+Chat page: http://localhost:8000/
 Interactive API docs: http://localhost:8000/docs
 
 **Command-line chat**
@@ -108,6 +110,7 @@ python agent.py
 
 | Method | Path | What it does |
 |---|---|---|
+| GET | `/` | Chat page |
 | GET | `/health` | Health check |
 | GET | `/customers` | List customers |
 | GET | `/customers/{customer_id}/orders` | A customer's orders |
@@ -132,7 +135,7 @@ Send the same `conversation_id` with every next message. An unknown ID returns *
 pytest -v
 ```
 
-7 tests:
+8 tests:
 
 | Test | Calls Gemini? |
 |---|---|
@@ -143,6 +146,7 @@ pytest -v
 | `get_plans` returns purchases | No |
 | Two conversations don't share verification | No |
 | `/chat` with an unknown ID returns 404 | No |
+| `GET /` serves the chat page | No |
 
 The two Gemini tests use real API calls, so their results can vary from run to run.
 
@@ -157,5 +161,5 @@ The two Gemini tests use real API calls, so their results can vary from run to r
 - [x] pytest tests
 - [x] `POST /chat` with per-conversation state
 - [x] README
-- [ ] Simple chat page
+- [x] Simple chat page
 - [ ] Docker and deployment with a live link
