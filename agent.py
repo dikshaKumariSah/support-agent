@@ -152,15 +152,20 @@ Always:
 
 GREETING = "Thank you for contacting ElectroMart customer care. My name is Riya, your virtual assistant. How can I help you today?"
 
-chat = client.chats.create(
-    model="gemini-3.5-flash-lite",
-    config=types.GenerateContentConfig(
-        tools=[verify_customer, get_orders, get_plans,
-               explain_courier_status, create_ticket],
-        system_instruction=RULES +
-        "\n- You have already greeted the customer. Don't greet again.",
-    ),
-)
+def new_chat():
+    return client.chats.create(
+        model="gemini-3.5-flash-lite",
+        config=types.GenerateContentConfig(
+            tools=[verify_customer, get_orders, get_plans,
+                   explain_courier_status, create_ticket],
+            system_instruction=RULES +
+            "\n- You have already greeted the customer. Don't greet again.",
+        ),
+    )
+
+
+chat = new_chat()
+
 if __name__ == "__main__":
     print("Agent:", GREETING)
     while True:
