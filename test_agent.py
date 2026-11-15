@@ -74,3 +74,11 @@ def test_chat_unknown_conversation_returns_404():
     client = TestClient(app)
     response = client.post("/chat", json={"message": "hi", "conversation_id": "does-not-exist"})
     assert response.status_code == 404
+
+
+def test_home_serves_chat_page():
+    client = TestClient(app)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Riya" in response.text
