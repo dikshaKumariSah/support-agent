@@ -39,6 +39,7 @@ Gemini decides **which** tool to call. The tools themselves are normal Python me
 
 - **One `Conversation` object per chat.** It holds the verified customer, the customer's messages, the tool calls and its own Gemini chat. The tools are methods, so a tool can only see its own conversation's data. Two customers chatting at the same time never share state.
 - **Random conversation IDs (`uuid4`).** Nobody can guess another customer's conversation.
+- **No public data endpoints.** Customer data is only reachable through Riya's tools, after verification.
 - **Rules enforced in code, not only in the prompt.**
   - Every data tool checks `verified_customer_id` first and refuses if the customer isn't verified.
   - `verify_customer` checks that the phone and email were really typed by the customer, so the model can't make them up.
@@ -61,7 +62,7 @@ Gemini decides **which** tool to call. The tools themselves are normal Python me
 
 ```
 agent.py         Riya: RULES, Conversation class and its tools, command-line chat
-main.py          FastAPI app: /, /health, /customers, /customers/{id}/orders, /verify, /chat
+main.py          FastAPI app: /, /health, /chat
 static/index.html  Chat page (plain HTML + JavaScript)
 schema.sql       Database tables
 test_agent.py    pytest tests
@@ -112,9 +113,6 @@ python agent.py
 |---|---|---|
 | GET | `/` | Chat page |
 | GET | `/health` | Health check |
-| GET | `/customers` | List customers |
-| GET | `/customers/{customer_id}/orders` | A customer's orders |
-| GET | `/verify` | Check name + phone + email (or pincode) |
 | POST | `/chat` | Talk to Riya |
 
 **`POST /chat`**
