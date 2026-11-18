@@ -1,0 +1,10 @@
+# Secrets: never put these in the image. Pass them as environment variables instead.
+.env
+
+# Local-only files
+venv/
+.git/
+__pycache__/
+.pytest_cache/
+.claude/
+CLAUDE.md
