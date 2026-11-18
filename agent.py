@@ -25,12 +25,13 @@ Follow this call flow in order:
 1. Understand the concern. If it's unclear or details are missing, ask one short question at a time. Don't guess.
 2. Say the concern back in one sentence and ask the customer to confirm it.
 3. Once confirmed, show empathy and say you'll try your best and check what you can do for them.
-4. Verify the customer's name, phone and email before looking up anything. If a detail doesn't match, politely ask again for that detail only.
+4. Verify the customer's name, phone and email before looking up anything. If a detail doesn't match, politely ask again for that detail only. If verify_customer returns full_name_needed, ask for their full name. If it returns surname_mismatch, ask if the account could be under another surname, and ask for their pincode.
 5. After verification, thank them by first name, then solve the concern using your tools.
 6. Ask: "Is there anything else I can help you with?"
 7. If no, close with: "Thank you for contacting ElectroMart customer care. You were speaking with Riya, ElectroMart's virtual assistant. Have a great day ahead, and take care!"
 
 Always:
+- Don't use the customer's name until verify_customer returns verified: true, even if they already typed it.
 - Use the customer's first name naturally after verification, not in every sentence.
 - Keep a warm tone, even in short answers.
 - Always say amounts in rupees, like ₹1,999. Never use $ or any other currency.
@@ -40,7 +41,7 @@ Always:
 - Do not offer a human on your own. If the customer asks for one, try to help twice; hand over only if they still insist.
 - If the request is outside what you can do, call create_ticket for the right team. Only tell the customer it's passed on after the ticket is created. Tell them the team has the details, so they won't need to explain again.
 
-- Unknown charge: Unknown charges are in scope. Never create a ticket for them before calling get_plans. Ask the amount and date first. If the customer only remembers roughly when (like "last year"), don't insist on an exact date. Call get_plans and compare with the membership last_payment_amount, plan price and purchase amount, and their payment, start or order dates. Customers often remember the price before tax, not the exact charge. Check everything in that period, find the closest amount near that date, then ask: "Was it this amount?" Only explain the charge after the customer confirms. If nothing matches, ask where they saw it. Email or text only: it may be a scam, so tell them not to click links or pay. Card statement and unauthorised: tell them to dispute it with their bank.
+- Unknown charge: Unknown charges are in scope. Never create a ticket for them before calling get_plans. Ask the amount and date first. If the customer only remembers roughly when (like "last year"), don't insist on an exact date. Call get_plans and compare with the membership last_payment_amount, plan price and purchase amount, and their payment, start or order dates. Customers often remember the price before tax, not the exact charge. Check everything in that period, find the closest amount near that date, then ask: "Was it this amount?" Only explain the charge after the customer confirms. If nothing matches, ask where they saw it. If they saw it only in an email or text message, say: it may be a scam, so don't click any links or pay anything. Forward the email to abuse@electromart.example. Check your card statement too. If the charge is there and you didn't make it, contact your bank and dispute it. Card statement and unauthorised: tell them to dispute it with their bank.
 """
 
 GREETING = "Thank you for contacting ElectroMart customer care. My name is Riya, your virtual assistant. How can I help you today?"
@@ -72,23 +73,38 @@ class Conversation:
 
     # ----- tools Gemini can call -----
 
-    def verify_customer(self, name: str, phone: str, email: str) -> dict:
-        """Verify the customer. Only call this AFTER the customer has confirmed their concern and has typed their name, phone and email. Never call it with made-up details."""
+    def verify_customer(self, name: str, phone: str, email: str, pincode: str = "") -> dict:
+        """Verify the customer with their full name, phone and email. Only call this AFTER the customer has confirmed their concern and has typed these details. Never call it with made-up details.
+        pincode: only if the customer typed it. Otherwise leave it empty."""
         self.tool_calls.append("verify_customer")
-        print(f"[TOOL] verify_customer called with: {name}, {phone}, {email}")
-        if phone not in self.customer_messages or email not in self.customer_messages:
+        print(f"[TOOL] verify_customer called with: {name}, {phone}, {email}, {pincode}")
+        typed = self.customer_messages.lower()
+        if phone not in typed or email.lower() not in typed or (pincode and pincode not in typed):
             return {"verified": False, "reason": "details_not_given", "note": "Ask the customer for their details. Never make them up."}
         with engine.connect() as conn:
             row = conn.execute(
-                text("SELECT id, name, phone FROM customers WHERE email = :email"),
+                text("SELECT id, name, phone, pincode FROM customers WHERE LOWER(email) = LOWER(:email)"),
                 {"email": email},
             ).first()
         if row is None:
             return {"verified": False, "reason": "email_not_found"}
         if row.phone != phone:
             return {"verified": False, "reason": "phone_mismatch"}
-        if row.name != name:
+
+        # Compare names word by word, ignoring capitals and extra spaces.
+        given = name.lower().split()
+        profile = row.name.lower().split()
+        if len(given) < 2:
+            return {"verified": False, "reason": "full_name_needed"}
+        if given[0] != profile[0]:
             return {"verified": False, "reason": "name_mismatch"}
+        if not all(part in given for part in profile):
+            # First name matches but the surname doesn't: maybe a maiden or married name.
+            if not pincode:
+                return {"verified": False, "reason": "surname_mismatch",
+                        "note": "Ask if the account could be under another surname, and ask for their pincode."}
+            if pincode != row.pincode:
+                return {"verified": False, "reason": "pincode_mismatch"}
         self.verified_customer_id = row.id
         return {"verified": True}
 

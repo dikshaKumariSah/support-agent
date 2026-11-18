@@ -62,6 +62,26 @@ def test_get_plans_returns_purchases(conv):
     assert laptop in result["purchases"]
 
 
+@pytest.mark.parametrize("name, email, pincode, expected", [
+    ("  ASHA kumari  rao", "asha@mail.com", "", True),               # middle name, capitals, extra spaces
+    ("Asha Rao", "Asha@Mail.COM", "", True),                         # email capitals
+    ("Asha", "asha@mail.com", "", "full_name_needed"),               # first name only
+    ("Usha Rao", "asha@mail.com", "", "name_mismatch"),              # wrong first name
+    ("Asha Sharma", "asha@mail.com", "", "surname_mismatch"),        # other surname, no pincode yet
+    ("Asha Sharma", "asha@mail.com", "560001", True),                # other surname, right pincode
+    ("Asha Sharma", "asha@mail.com", "110001", "pincode_mismatch"),  # other surname, wrong pincode
+])
+def test_verify_customer_name_rules(conv, name, email, pincode, expected):
+    conv.customer_messages = f"{name}, 9800000001, {email} {pincode}"  # what the customer typed
+    result = conv.verify_customer(name=name, phone="9800000001", email=email, pincode=pincode)
+    if expected is True:
+        assert result == {"verified": True}
+        assert conv.verified_customer_id == 1
+    else:
+        assert result["reason"] == expected
+        assert conv.verified_customer_id is None
+
+
 def test_conversations_do_not_share_verification():
     asha = Conversation()
     stranger = Conversation()
