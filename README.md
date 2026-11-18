@@ -65,6 +65,7 @@ agent.py         Riya: RULES, Conversation class and its tools, command-line cha
 main.py          FastAPI app: /, /health, /chat
 static/index.html  Chat page (plain HTML + JavaScript)
 schema.sql       Database tables
+seed.sql         Sample data (made-up)
 test_agent.py    pytest tests
 requirements.txt Python packages
 ```
@@ -91,7 +92,10 @@ requirements.txt Python packages
    ```
    A free-tier key from Google AI Studio is enough.
 
-4. **Add sample data.** The tests expect a sample customer, Asha Rao (customer id 1), with a Plus membership paid on 10 January 2026 (1999.00) and a Laptop order (54999.00).
+4. **Add the sample data** (made-up customers Asha and Ravi Rao, with Asha's membership, plans, Laptop order and service booking). The tests use this data.
+   ```bash
+   psql -d support_agent -f seed.sql
+   ```
 
 ## Run
 
@@ -151,7 +155,6 @@ The two Gemini tests use real API calls, so their results can vary from run to r
 ## Known limitations
 
 - Conversations are kept in memory: they are lost when the server restarts, and old ones are never cleaned up.
-- There is no seed script for sample data yet.
 
 ## Roadmap
 
