@@ -11,7 +11,7 @@ def conv():
 
 
 def talk(conv, messages):
-    """Send customer messages to Riya one by one."""
+    """Send customer messages to Dhriti one by one."""
     for message in messages:
         reply = conv.send(message)
         print("CUSTOMER:", message)
@@ -101,4 +101,4 @@ def test_home_serves_chat_page():
     response = client.get("/")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
-    assert "Riya" in response.text
+    assert "Dhriti" in response.text

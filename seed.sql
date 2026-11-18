@@ -1,5 +1,5 @@
 -- Sample data for ElectroMart (made-up). Run after schema.sql.
--- Tickets are not included: Riya creates them during chats.
+-- Tickets are not included: Dhriti creates them during chats.
 
 INSERT INTO customers (id, name, phone, email, address, city, state, pincode) VALUES (1, 'Asha Rao', '9800000001', 'asha@mail.com', '12 MG Road', 'Bengaluru', 'Karnataka', '560001');
 INSERT INTO customers (id, name, phone, email, address, city, state, pincode) VALUES (2, 'Ravi Rao', '9800000001', 'ravi@mail.com', '12 MG Road', 'Bengaluru', 'Karnataka', '560001');

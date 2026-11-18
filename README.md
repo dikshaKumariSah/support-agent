@@ -1,7 +1,7 @@
-# Riya – ElectroMart Support Agent
+# Dhriti – ElectroMart Support Agent
 
 A customer-support AI agent for **ElectroMart**, a made-up electronics store.
-Riya chats with customers, verifies who they are, looks up their data in PostgreSQL through tools, and hands over to a human team only when she can't help.
+Dhriti chats with customers, verifies who they are, looks up their data in PostgreSQL through tools, and hands over to a human team only when she can't help.
 
 Built with **Python, FastAPI, PostgreSQL and Google Gemini (function calling)**.
 
@@ -9,7 +9,7 @@ Built with **Python, FastAPI, PostgreSQL and Google Gemini (function calling)**.
 
 ---
 
-## What Riya can do
+## What Dhriti can do
 
 - **Follow a support call flow**: understand the concern → confirm it → show empathy → verify the customer → solve it with tools → "anything else?" → close.
 - **Verify customers** by name, phone and email before showing any account data.
@@ -39,7 +39,7 @@ Gemini decides **which** tool to call. The tools themselves are normal Python me
 
 - **One `Conversation` object per chat.** It holds the verified customer, the customer's messages, the tool calls and its own Gemini chat. The tools are methods, so a tool can only see its own conversation's data. Two customers chatting at the same time never share state.
 - **Random conversation IDs (`uuid4`).** Nobody can guess another customer's conversation.
-- **No public data endpoints.** Customer data is only reachable through Riya's tools, after verification.
+- **No public data endpoints.** Customer data is only reachable through Dhriti's tools, after verification.
 - **Rules enforced in code, not only in the prompt.**
   - Every data tool checks `verified_customer_id` first and refuses if the customer isn't verified.
   - `verify_customer` checks that the phone and email were really typed by the customer, so the model can't make them up.
@@ -61,7 +61,7 @@ Gemini decides **which** tool to call. The tools themselves are normal Python me
 ## Project structure
 
 ```
-agent.py         Riya: RULES, Conversation class and its tools, command-line chat
+agent.py         Dhriti: RULES, Conversation class and its tools, command-line chat
 main.py          FastAPI app: /, /health, /chat
 static/index.html  Chat page (plain HTML + JavaScript)
 schema.sql       Database tables
@@ -117,7 +117,7 @@ python agent.py
 |---|---|---|
 | GET | `/` | Chat page |
 | GET | `/health` | Health check |
-| POST | `/chat` | Talk to Riya |
+| POST | `/chat` | Talk to Dhriti |
 
 **`POST /chat`**
 

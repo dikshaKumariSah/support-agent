@@ -40,9 +40,9 @@
       padding: 10px 14px;
       border-radius: 14px;
       line-height: 1.4;
-      white-space: pre-wrap;  /* keep line breaks from Riya's replies */
+      white-space: pre-wrap;  /* keep line breaks from Dhriti's replies */
     }
-    .riya { align-self: flex-start; background: #e9eef6; }
+    .assistant { align-self: flex-start; background: #e9eef6; }
     .customer { align-self: flex-end; background: #1f4e8c; color: white; }
     .typing { font-style: italic; opacity: 0.7; }
     .error { align-self: center; background: #fdecea; color: #a12622; font-size: 14px; }
@@ -75,7 +75,7 @@
   <div class="chat">
     <header>
       <h1>ElectroMart Customer Care</h1>
-      <p>Chat with Riya, our virtual assistant</p>
+      <p>Chat with Dhriti, our virtual assistant</p>
     </header>
 
     <div id="messages"></div>
@@ -88,7 +88,7 @@
 
   <script>
     // Same text as GREETING in agent.py. If you change one, change both.
-    const GREETING = "Thank you for contacting ElectroMart customer care. My name is Riya, your virtual assistant. How can I help you today?";
+    const GREETING = "Thank you for contacting ElectroMart customer care. My name is Dhriti, your virtual assistant. How can I help you today?";
 
     // Empty at first. The server gives us an id with the first reply,
     // and we send it back with every next message.
@@ -108,7 +108,7 @@
       return div;
     }
 
-    addMessage(GREETING, "riya");
+    addMessage(GREETING, "assistant");
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();  // stop the browser from reloading the page
@@ -118,7 +118,7 @@
       addMessage(text, "customer");
       input.value = "";
       button.disabled = true;
-      const typing = addMessage("Riya is typing…", "riya typing");
+      const typing = addMessage("Dhriti is typing…", "assistant typing");
 
       try {
         const response = await fetch("/chat", {
@@ -132,7 +132,7 @@
         const data = await response.json();
         conversationId = data.conversation_id;
         typing.remove();
-        addMessage(data.reply, "riya");
+        addMessage(data.reply, "assistant");
       } catch (error) {
         console.error(error);
         typing.remove();
