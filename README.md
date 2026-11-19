@@ -18,6 +18,7 @@ It runs on Render's free plan, which sleeps after 15 idle minutes, so the first 
 - **Verify customers** by name, phone and email before showing any account data.
 - **Explain order status** using approved, plain-language courier explanations.
 - **Investigate unknown charges**: compare the amount and date with the customer's membership, plans and purchases, confirm the closest match ("Was it this amount?"), and only then explain it. If nothing matches, ask where the charge was seen and give scam or bank-dispute advice.
+- **Handle membership cancellations** (Silver ₹1,999/yr, Gold ₹13,999/yr) like a call centre: ask the reason first, explain the benefits the customer would lose, suggest moving from Gold to Silver instead of cancelling, and explain what they keep after cancelling. A "never signed up" case is treated as possible fraud and handed to a human instead of being cancelled.
 - **Create handover tickets** with a short brief, so the customer doesn't have to repeat themselves to a human.
 
 ## How it works
@@ -30,7 +31,8 @@ Client ──POST /chat──▶ FastAPI (main.py)
                           │  sends the message to Gemini with RULES + tools
                           ▼
                        Gemini ──calls tools──▶ verify_customer / get_orders / get_plans /
-                                               explain_courier_status / create_ticket
+                                               explain_courier_status / create_ticket /
+                                               get_membership_options / cancel_membership
                                                           │
                                                           ▼
                                                      PostgreSQL
@@ -46,7 +48,8 @@ Gemini decides **which** tool to call. The tools themselves are normal Python me
 - **Rules enforced in code, not only in the prompt.**
   - Every data tool checks `verified_customer_id` first and refuses if the customer isn't verified.
   - `verify_customer` checks that the phone and email were really typed by the customer, so the model can't make them up.
-  - `create_ticket` refuses an `unknown_charge` ticket until `get_plans` has been called.
+  - `create_ticket` refuses an `unknown_charge` ticket until `get_plans` has actually returned the customer's data (a failed call doesn't count).
+  - `cancel_membership` only works for a verified customer with a reason, never cancels a "never signed up" case, and reports database errors so a ticket can be created.
 - **SQL placeholders (`:cid`)** everywhere, never values pasted into SQL text, to prevent SQL injection.
 - **Dates and Decimals are converted to text** (`json.dumps(..., default=str)`) before being sent to Gemini.
 - **Tests check behaviour, not wording.** The model's wording changes on every run, so tests check which tools were called.
@@ -95,7 +98,7 @@ requirements.txt Python packages
    ```
    A free-tier key from Google AI Studio is enough.
 
-4. **Add the sample data** (made-up customers Asha and Ravi Rao, with Asha's membership, plans, Laptop order and service booking). The tests use this data.
+4. **Add the sample data** (made-up customers Asha Rao with a Silver membership, plans, a Laptop order and a service booking, and Ravi Rao with a Gold membership). The tests use this data.
    ```bash
    psql -d support_agent -f seed.sql
    ```
@@ -140,7 +143,7 @@ Send the same `conversation_id` with every next message. An unknown ID returns *
 pytest -v
 ```
 
-16 tests:
+22 tests:
 
 | Test | Calls Gemini? |
 |---|---|
@@ -151,6 +154,12 @@ pytest -v
 | `get_plans` refuses an unverified customer | No |
 | `get_plans` returns purchases | No |
 | Name rules for `verify_customer` (7 cases: middle name, capitals and spaces, email capitals, first name only, wrong first name, other surname with and without pincode) | No |
+| Cancellation refused for an unverified customer | No |
+| "Never signed up" is not cancelled (possible fraud) | No |
+| Cancellation saves status `Cancelled` and the reason | No |
+| Cancelling twice finds no active membership | No |
+| A database failure returns `database_error` | No |
+| Gold members are offered Silver as a cheaper option | No |
 | Two conversations don't share verification | No |
 | `/chat` with an unknown ID returns 404 | No |
 | `GET /` serves the chat page | No |
@@ -161,6 +170,7 @@ The two Gemini tests use real API calls, so their results can vary from run to r
 
 - Conversations are kept in memory: they are lost when the server restarts, and old ones are never cleaned up.
 - The live demo is on Render's free plan: it sleeps after 15 idle minutes, so the first visit can take up to a minute.
+- Demo visitors can really cancel the sample memberships, and they stay cancelled until the data is reset. The cancellation tests write only to a local database and restore it afterwards.
 
 ## Roadmap
 
