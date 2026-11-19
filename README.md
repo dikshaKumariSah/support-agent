@@ -140,15 +140,17 @@ Send the same `conversation_id` with every next message. An unknown ID returns *
 pytest -v
 ```
 
-8 tests:
+16 tests:
 
 | Test | Calls Gemini? |
 |---|---|
 | Charge of 1999 matches the membership; no ticket | Yes |
 | Charge of 4321 matches nothing; no ticket | Yes |
 | Guard blocks an unknown-charge ticket before `get_plans` | No |
+| Guard still blocks it when `get_plans` failed (customer not verified) | No |
 | `get_plans` refuses an unverified customer | No |
 | `get_plans` returns purchases | No |
+| Name rules for `verify_customer` (7 cases: middle name, capitals and spaces, email capitals, first name only, wrong first name, other surname with and without pincode) | No |
 | Two conversations don't share verification | No |
 | `/chat` with an unknown ID returns 404 | No |
 | `GET /` serves the chat page | No |
