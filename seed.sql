@@ -4,7 +4,8 @@
 INSERT INTO customers (id, name, phone, email, address, city, state, pincode) VALUES (1, 'Asha Rao', '9800000001', 'asha@mail.com', '12 MG Road', 'Bengaluru', 'Karnataka', '560001');
 INSERT INTO customers (id, name, phone, email, address, city, state, pincode) VALUES (2, 'Ravi Rao', '9800000001', 'ravi@mail.com', '12 MG Road', 'Bengaluru', 'Karnataka', '560001');
 
-INSERT INTO memberships (id, customer_id, tier, start_date, last_payment_date, last_payment_amount, renewal_date, status, cancel_reason) VALUES (1, 1, 'Plus', '2026-01-10', '2026-01-10', 1999.00, '2027-01-10', 'Active', NULL);
+INSERT INTO memberships (id, customer_id, tier, start_date, last_payment_date, last_payment_amount, renewal_date, status, cancel_reason) VALUES (1, 1, 'Silver', '2026-01-10', '2026-01-10', 1999.00, '2027-01-10', 'Active', NULL);
+INSERT INTO memberships (id, customer_id, tier, start_date, last_payment_date, last_payment_amount, renewal_date, status, cancel_reason) VALUES (2, 2, 'Gold', '2026-03-01', '2026-03-01', 13999.00, '2027-03-01', 'Active', NULL);
 
 INSERT INTO orders (id, customer_id, product, order_date, warranty_months, expected_delivery, status, courier_status, delay_reason, amount) VALUES (1, 1, 'Laptop', '2026-11-05', 12, '2026-11-10', 'On the way', 'Held at facility', 'Heavy rain in the area', 54999.00);
 

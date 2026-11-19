@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 
 load_dotenv()
 engine = create_engine(os.getenv("DATABASE_URL"))
@@ -18,6 +19,24 @@ COURIER_GUIDE = {
     "Out for delivery": "The parcel is with a delivery person.",
     "Delivered": "The courier has marked the parcel as delivered.",
 }
+
+MEMBERSHIP_GUIDE = {
+    "Silver": {
+        "price": "₹1,999 a year",
+        "benefits": ["Free delivery on all orders", "Member-only prices",
+                     "A protection plan for devices bought from us"],
+    },
+    "Gold": {
+        "price": "₹13,999 a year",
+        "benefits": ["Everything in Silver", "Free home repair visits",
+                     "Priority customer support", "Longer warranty on new purchases"],
+    },
+}
+
+AFTER_CANCELLING = ("Benefits stay until the renewal date, then end, including plans that came with the membership. "
+                    "Separately bought plans are not affected. No refunds are promised.")
+
+CANCEL_REASONS = {"not_using", "confused", "never_signed_up", "other"}
 
 RULES = """You are Dhriti, a virtual assistant for ElectroMart, an electronics store.
 
@@ -41,7 +60,15 @@ Always:
 - Do not offer a human on your own. If the customer asks for one, try to help twice; hand over only if they still insist.
 - If the request is outside what you can do, call create_ticket for the right team. Only tell the customer it's passed on after the ticket is created. Tell them the team has the details, so they won't need to explain again.
 
-- Unknown charge: Unknown charges are in scope. Never create a ticket for them before calling get_plans. Ask the amount and date first. If the customer only remembers roughly when (like "last year"), don't insist on an exact date. Call get_plans and compare with the membership last_payment_amount, plan price and purchase amount, and their payment, start or order dates. Customers often remember the price before tax, not the exact charge. Check everything in that period and find the closest amount near that date. Then ask only about the amount and date, like: "I found a charge of ₹1,999 on 10 January 2026. Was it this amount?" Don't say what the charge is for in this question. Explain what it was for only after the customer says yes. The membership and the plans are separate: a membership payment is the membership fee, so call it the membership (for example "your Plus membership"), never a protection plan. A plan with source "Membership" is included with the membership and has no charge of its own. If nothing matches, ask where they saw it. If they saw it only in an email or text message, say: it may be a scam, so don't click any links or pay anything. Forward the email to abuse@electromart.example. Check your card statement too. If the charge is there and you didn't make it, contact your bank and dispute it. Card statement and unauthorised: tell them to dispute it with their bank.
+- Unknown charge: Unknown charges are in scope. Never create a ticket for them before calling get_plans. Ask the amount and date first. If the customer only remembers roughly when (like "last year"), don't insist on an exact date. Call get_plans and compare with the membership last_payment_amount, plan price and purchase amount, and their payment, start or order dates. Customers often remember the price before tax, not the exact charge. Check everything in that period and find the closest amount near that date. Then ask only about the amount and date, like: "I found a charge of ₹1,999 on 10 January 2026. Was it this amount?" Don't say what the charge is for in this question. Explain what it was for only after the customer says yes. The membership and the plans are separate: a membership payment is the membership fee, so call it the membership (for example "your Silver membership"), never a protection plan. A plan with source "Membership" is included with the membership and has no charge of its own. If nothing matches, ask where they saw it. If they saw it only in an email or text message, say: it may be a scam, so don't click any links or pay anything. Forward the email to abuse@electromart.example. Check your card statement too. If the charge is there and you didn't make it, contact your bank and dispute it. Card statement and unauthorised: tell them to dispute it with their bank.
+
+- Membership cancellation: Membership cancellations are in scope. Verify the customer first. Then ask why they want to cancel, before doing anything else. Then follow the reason:
+  - Not using it: call get_membership_options and explain the benefits they are paying for, so they know what they would lose. If they have Gold, suggest moving to Silver instead of cancelling, with its price. If they want to move to Silver, create a ticket for the Membership team to change the tier.
+  - Confused about the membership: call get_membership_options and explain the benefits and what they keep after cancelling.
+  - Never signed up for it: it may be fraud. Don't cancel. Create a ticket for the Fraud team.
+  - If they still want to cancel after that, call cancel_membership with the reason in their own words.
+  - If cancel_membership returns database_error, tell them it couldn't be done right now and create a ticket for the Backend team.
+  Only use benefits and prices from get_membership_options. Never promise refunds.
 """
 
 GREETING = "Thank you for contacting ElectroMart customer care. My name is Dhriti, your virtual assistant. How can I help you today?"
@@ -61,7 +88,8 @@ class Conversation:
             model="gemini-3.5-flash-lite",
             config=types.GenerateContentConfig(
                 tools=[self.verify_customer, self.get_orders, self.get_plans,
-                       self.explain_courier_status, self.create_ticket],
+                       self.explain_courier_status, self.create_ticket,
+                       self.get_membership_options, self.cancel_membership],
                 system_instruction=RULES +
                 "\n- You have already greeted the customer. Don't greet again.",
             ),
@@ -152,6 +180,61 @@ class Conversation:
         """Get the approved plain-language meaning of a courier status. Always use this instead of explaining it yourself."""
         self.tool_calls.append("explain_courier_status")
         return COURIER_GUIDE.get(status, "No approved explanation. Do not guess; just repeat the status.")
+
+    def get_membership_options(self) -> dict:
+        """Get the verified customer's membership: tier, price, benefits, renewal date, what they keep after cancelling, and a cheaper tier they could move to. Use it to explain the membership before any cancellation."""
+        self.tool_calls.append("get_membership_options")
+        if self.verified_customer_id is None:
+            return {"error": "Customer not verified"}
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT tier, status, renewal_date FROM memberships WHERE customer_id = :cid"),
+                {"cid": self.verified_customer_id},
+            ).first()
+        if row is None:
+            return {"membership": None}
+        guide = MEMBERSHIP_GUIDE.get(row.tier, {})
+        result = {
+            "tier": row.tier,
+            "status": row.status,
+            "renewal_date": str(row.renewal_date),
+            "price": guide.get("price"),
+            "benefits": guide.get("benefits", []),
+            "after_cancelling": AFTER_CANCELLING,
+        }
+        if row.tier == "Gold":
+            result["cheaper_option"] = {"tier": "Silver", **MEMBERSHIP_GUIDE["Silver"]}
+        return result
+
+    def cancel_membership(self, reason_category: str, reason: str) -> dict:
+        """Cancel the verified customer's active membership. Only call this after you asked the reason, explained the benefits, and the customer still wants to cancel.
+        reason_category: "not_using", "confused", "never_signed_up" or "other".
+        reason: the customer's reason in their own words."""
+        self.tool_calls.append("cancel_membership")
+        if self.verified_customer_id is None:
+            return {"cancelled": False, "reason": "not_verified", "note": "Verify the customer first."}
+        if reason_category not in CANCEL_REASONS:
+            return {"cancelled": False, "reason": "unknown_category"}
+        if reason_category == "never_signed_up":
+            return {"cancelled": False, "reason": "possible_fraud",
+                    "note": "Don't cancel. Create a ticket for the Fraud team."}
+        if not reason.strip():
+            return {"cancelled": False, "reason": "reason_needed", "note": "Ask the customer why they want to cancel."}
+        try:
+            with engine.begin() as conn:
+                row = conn.execute(
+                    text("UPDATE memberships SET status = 'Cancelled', cancel_reason = :reason "
+                         "WHERE customer_id = :cid AND status = 'Active' RETURNING tier, renewal_date"),
+                    {"reason": reason, "cid": self.verified_customer_id},
+                ).first()
+        except SQLAlchemyError as error:
+            print(f"[TOOL] cancel_membership database error: {type(error).__name__}")
+            return {"cancelled": False, "reason": "database_error",
+                    "note": "Create a ticket for the Backend team."}
+        if row is None:
+            return {"cancelled": False, "reason": "no_active_membership"}
+        print(f"[TOOL] cancel_membership cancelled {row.tier} for customer {self.verified_customer_id}")
+        return {"cancelled": True, "tier": row.tier, "benefits_until": str(row.renewal_date)}
 
     def create_ticket(self, concern: str, problem: str, tried_for_this_concern: str, reason: str, customer_mood: str, team: str) -> dict:
         """Hand the conversation to a human team.

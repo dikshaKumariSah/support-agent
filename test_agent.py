@@ -1,5 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, text
+import agent
 from agent import Conversation
 from main import app
 
@@ -114,3 +116,74 @@ def test_home_serves_chat_page():
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     assert "Dhriti" in response.text
+
+
+# ---------- Membership cancellation (local database only) ----------
+
+def membership(customer_id):
+    """Read a membership's status and cancel reason straight from the database."""
+    with agent.engine.connect() as conn:
+        return conn.execute(
+            text("SELECT status, cancel_reason FROM memberships WHERE customer_id = :cid"),
+            {"cid": customer_id},
+        ).first()
+
+
+@pytest.fixture
+def restore_memberships():
+    """After the test, put Asha's and Ravi's memberships back to Active, even if the test failed."""
+    yield
+    with agent.engine.begin() as conn:
+        conn.execute(text(
+            "UPDATE memberships SET status = 'Active', cancel_reason = NULL WHERE customer_id IN (1, 2)"
+        ))
+
+
+def test_cancel_needs_verification(conv):
+    result = conv.cancel_membership(reason_category="not_using", reason="I don't use it")
+    assert result["reason"] == "not_verified"
+    assert membership(1).status == "Active"
+
+
+def test_cancel_never_signed_up_is_not_cancelled(conv):
+    conv.verified_customer_id = 1
+    result = conv.cancel_membership(reason_category="never_signed_up", reason="I never signed up")
+    assert result["reason"] == "possible_fraud"
+    assert membership(1).status == "Active"
+
+
+def test_cancel_membership_success(conv, restore_memberships):
+    conv.verified_customer_id = 1
+    result = conv.cancel_membership(reason_category="not_using", reason="I don't shop here anymore")
+    assert result == {"cancelled": True, "tier": "Silver", "benefits_until": "2027-01-10"}
+    row = membership(1)
+    assert row.status == "Cancelled"
+    assert row.cancel_reason == "I don't shop here anymore"
+
+
+def test_cancel_twice_finds_no_active_membership(conv, restore_memberships):
+    conv.verified_customer_id = 1
+    conv.cancel_membership(reason_category="other", reason="Too expensive")
+    result = conv.cancel_membership(reason_category="other", reason="Too expensive")
+    assert result["reason"] == "no_active_membership"
+
+
+def test_cancel_database_error(conv, monkeypatch):
+    real_engine = agent.engine
+    # Point the agent at a database address where nothing is running, so the UPDATE really fails.
+    # monkeypatch puts the real engine back automatically after the test.
+    monkeypatch.setattr(agent, "engine", create_engine("postgresql+psycopg://nobody:nothing@127.0.0.1:1/none?connect_timeout=2"))
+    conv.verified_customer_id = 1
+    result = conv.cancel_membership(reason_category="not_using", reason="I don't use it")
+    assert result["reason"] == "database_error"
+    with real_engine.connect() as conn:  # check with the real database: nothing changed
+        status = conn.execute(text("SELECT status FROM memberships WHERE customer_id = 1")).scalar()
+    assert status == "Active"
+
+
+def test_gold_membership_offers_silver(conv):
+    conv.verified_customer_id = 2
+    result = conv.get_membership_options()
+    assert result["tier"] == "Gold"
+    assert result["cheaper_option"]["tier"] == "Silver"
+    assert result["cheaper_option"]["price"] == "₹1,999 a year"

@@ -12,7 +12,7 @@ CREATE TABLE customers (
 CREATE TABLE memberships (
     id SERIAL PRIMARY KEY,
     customer_id INTEGER NOT NULL REFERENCES customers(id),
-    tier TEXT NOT NULL CHECK (tier IN ('Free', 'Plus', 'Total')),
+    tier TEXT NOT NULL CHECK (tier IN ('Free', 'Silver', 'Gold')),
     start_date DATE NOT NULL,
     last_payment_date DATE,
     last_payment_amount NUMERIC(10, 2),
