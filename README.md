@@ -5,6 +5,9 @@ Dhriti chats with customers, verifies who they are, looks up their data in Postg
 
 Built with **Python, FastAPI, PostgreSQL and Google Gemini (function calling)**.
 
+**Live demo:** https://support-agent-zhok.onrender.com/
+It runs on Render's free plan, which sleeps after 15 idle minutes, so the first visit can take up to a minute to load.
+
 > ElectroMart, its customers and its policies are fictional. No real company or customer data is used.
 
 ---
@@ -155,6 +158,7 @@ The two Gemini tests use real API calls, so their results can vary from run to r
 ## Known limitations
 
 - Conversations are kept in memory: they are lost when the server restarts, and old ones are never cleaned up.
+- The live demo is on Render's free plan: it sleeps after 15 idle minutes, so the first visit can take up to a minute.
 
 ## Roadmap
 
@@ -163,4 +167,4 @@ The two Gemini tests use real API calls, so their results can vary from run to r
 - [x] `POST /chat` with per-conversation state
 - [x] README
 - [x] Simple chat page
-- [ ] Docker and deployment with a live link
+- [x] Docker and deployment with a live link

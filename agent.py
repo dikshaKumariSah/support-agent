@@ -56,6 +56,7 @@ class Conversation:
         self.verified_customer_id = None
         self.customer_messages = ""
         self.tool_calls = []
+        self.plans_checked = False  # True only after get_plans really returned the customer's data
         self.chat = client.chats.create(
             model="gemini-3.5-flash-lite",
             config=types.GenerateContentConfig(
@@ -144,6 +145,7 @@ class Conversation:
         result = {"membership": [dict(m) for m in membership],
                   "plans": [dict(p) for p in plans],
                   "purchases": [dict(o) for o in purchases]}
+        self.plans_checked = True
         return json.loads(json.dumps(result, default=str))
 
     def explain_courier_status(self, status: str) -> str:
@@ -161,9 +163,9 @@ class Conversation:
         - problem: use the customer's own words. Don't add details they didn't say.
         - tried_for_this_concern: only what was tried for THIS concern. If nothing, write "Nothing yet".
         - customer_mood: only if the customer clearly showed it. Otherwise write "Calm"."""
-        if concern == "unknown_charge" and "get_plans" not in self.tool_calls:
+        if concern == "unknown_charge" and not self.plans_checked:
             self.tool_calls.append("create_ticket_blocked")
-            return {"created": False, "error": "Call get_plans first and compare the charge before creating a ticket."}
+            return {"created": False, "error": "Verify the customer, get their data with get_plans and compare the charge before creating a ticket."}
         self.tool_calls.append("create_ticket")
         print(f"[TOOL] create_ticket called for team: {team}")
         brief = {

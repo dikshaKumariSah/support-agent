@@ -51,6 +51,18 @@ def test_guard_blocks_charge_ticket_before_get_plans(conv):
     assert "create_ticket" not in conv.tool_calls
 
 
+def test_guard_blocks_charge_ticket_when_get_plans_failed(conv):
+    # get_plans is called, but fails because the customer isn't verified
+    assert conv.get_plans() == {"error": "Customer not verified"}
+    assert "get_plans" in conv.tool_calls
+    result = conv.create_ticket(
+        concern="unknown_charge", problem="unknown charge", tried_for_this_concern="Nothing yet",
+        reason="test", customer_mood="Calm", team="Billing",
+    )
+    assert result["created"] is False
+    assert "create_ticket" not in conv.tool_calls
+
+
 def test_get_plans_needs_verification(conv):
     assert conv.get_plans() == {"error": "Customer not verified"}
 
