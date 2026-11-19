@@ -50,8 +50,10 @@ Gemini decides **which** tool to call. The tools themselves are normal Python me
   - `verify_customer` checks that the phone and email were really typed by the customer, so the model can't make them up.
   - `create_ticket` refuses an `unknown_charge` ticket until `get_plans` has actually returned the customer's data (a failed call doesn't count).
   - `cancel_membership` only works for a verified customer with a reason, never cancels a "never signed up" case, and reports database errors so a ticket can be created.
+  - `cancel_membership` also refuses until `get_membership_options` has shown the benefits **and** the customer has sent a message after that, so Dhriti can't show the benefits and cancel in the same turn. Before cancelling she asks one clear question: "Just to confirm, do you want to cancel your <tier> membership?"
 - **SQL placeholders (`:cid`)** everywhere, never values pasted into SQL text, to prevent SQL injection.
 - **Dates and Decimals are converted to text** (`json.dumps(..., default=str)`) before being sent to Gemini.
+- **One retry when Gemini is busy.** If Gemini answers 429 (rate limit) or 503 (busy), the message is sent once more after 5 seconds, but only if no tool ran yet, so a retry can never repeat a tool like `create_ticket`.
 - **Tests check behaviour, not wording.** The model's wording changes on every run, so tests check which tools were called.
 
 ## Tech stack
@@ -143,7 +145,7 @@ Send the same `conversation_id` with every next message. An unknown ID returns *
 pytest -v
 ```
 
-22 tests:
+26 tests:
 
 | Test | Calls Gemini? |
 |---|---|
@@ -159,6 +161,10 @@ pytest -v
 | Cancellation saves status `Cancelled` and the reason | No |
 | Cancelling twice finds no active membership | No |
 | A database failure returns `database_error` | No |
+| Cancellation refused before the benefits were shown | No |
+| Cancellation refused in the same turn as the benefits (no customer answer yet) | No |
+| `send` retries once when Gemini is busy (503) | No |
+| `send` does not retry if a tool already ran | No |
 | Gold members are offered Silver as a cheaper option | No |
 | Two conversations don't share verification | No |
 | `/chat` with an unknown ID returns 404 | No |

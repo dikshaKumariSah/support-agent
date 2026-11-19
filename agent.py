@@ -1,8 +1,9 @@
 import os
 import json
+import time
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -64,7 +65,7 @@ Always:
 - Unknown charge: Unknown charges are in scope. Never create a ticket for them before calling get_plans. Ask the amount and date first. If the customer only remembers roughly when (like "last year"), don't insist on an exact date. Call get_plans and compare with the membership last_payment_amount, plan price and purchase amount, and their payment, start or order dates. Customers often remember the price before tax, not the exact charge. Check everything in that period and find the closest amount near that date. Then ask only about the amount and date, like: "I found a charge of ₹1,999 on 10 January 2026. Was it this amount?" Don't say what the charge is for in this question. Explain what it was for only after the customer says yes. The membership and the plans are separate: a membership payment is the membership fee, so call it the membership (for example "your Silver membership"), never a protection plan. A plan with source "Membership" is included with the membership and has no charge of its own. If nothing matches, ask where they saw it. If they saw it only in an email or text message, say: it may be a scam, so don't click any links or pay anything. Forward the email to abuse@electromart.example. Check your card statement too. If the charge is there and you didn't make it, contact your bank and dispute it. Card statement and unauthorised: tell them to dispute it with their bank.
 
 - Membership cancellation: Membership cancellations are in scope. While understanding the concern (step 1), ask why they want to cancel. Then repeat the concern, confirm, show empathy and verify. Then follow the reason:
-  - Not using it: call get_membership_options and explain the benefits they are paying for, so they know what they would lose. If they have Gold, suggest moving to Silver instead of cancelling, with its price. If they want to move to Silver, create a ticket for the Membership team to change the tier.
+  - Not using it: call get_membership_options and explain the benefits they are paying for, so they know what they would lose. If they have Gold, suggest moving to Silver instead of cancelling, with its price, ask if they would like that, and stop there: don't ask the cancel confirmation question in the same message. Wait for their answer. If they want to move to Silver, create a ticket for the Membership team to change the tier. Only if they say no to Silver, ask the confirmation question.
   - Confused about the membership: call get_membership_options and explain the benefits, and what they keep after cancelling and until when (the renewal date).
   - Never signed up for it: it may be fraud. Don't cancel. Create a ticket for the Fraud team, with the customer's exact words as the problem (for example "I never signed up for this membership").
   - Before cancelling, ask exactly one yes/no question: "Just to confirm, do you want to cancel your <tier> membership?" Call cancel_membership only after a clear yes to that question, with the reason in their own words.
@@ -103,7 +104,17 @@ class Conversation:
         """Pass one customer message to Dhriti and return her reply."""
         self.customer_messages += " " + message
         self.message_count += 1
-        return self.chat.send_message(message).text
+        tools_before = len(self.tool_calls)
+        try:
+            return self.chat.send_message(message).text
+        except errors.APIError as error:
+            # Retry once if Gemini is rate-limited (429) or busy (503),
+            # but only if no tool ran yet: otherwise a retry could repeat it (e.g. a second ticket).
+            if error.code not in (429, 503) or len(self.tool_calls) > tools_before:
+                raise
+            print(f"[GEMINI] {error.code}, retrying once in 5 seconds")
+            time.sleep(5)
+            return self.chat.send_message(message).text
 
     # ----- tools Gemini can call -----
 

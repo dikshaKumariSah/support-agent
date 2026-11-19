@@ -1,5 +1,8 @@
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
+from google.genai import errors
 from sqlalchemy import create_engine, text
 import agent
 from agent import Conversation
@@ -212,3 +215,43 @@ def test_gold_membership_offers_silver(conv):
     assert result["tier"] == "Gold"
     assert result["cheaper_option"]["tier"] == "Silver"
     assert result["cheaper_option"]["price"] == "₹1,999 a year"
+
+
+# ---------- Retry when Gemini is busy (no real Gemini calls) ----------
+
+def gemini_error(code):
+    return errors.APIError(code, {"error": {"code": code, "message": "test", "status": "TEST"}})
+
+
+class FakeChat:
+    """Stands in for the Gemini chat: raises the given errors first, then answers."""
+
+    def __init__(self, failures, conv=None, run_tool=False):
+        self.failures = list(failures)
+        self.calls = 0
+        self.conv = conv
+        self.run_tool = run_tool
+
+    def send_message(self, message):
+        self.calls += 1
+        if self.failures:
+            if self.run_tool:  # pretend a tool ran before the error
+                self.conv.tool_calls.append("create_ticket")
+            raise self.failures.pop(0)
+        return SimpleNamespace(text="Hello from Dhriti")
+
+
+def test_send_retries_once_when_gemini_is_busy(conv, monkeypatch):
+    monkeypatch.setattr(agent.time, "sleep", lambda seconds: None)  # don't really wait
+    conv.chat = FakeChat([gemini_error(503)])
+    assert conv.send("hi") == "Hello from Dhriti"
+    assert conv.chat.calls == 2
+    assert conv.message_count == 1  # the message is counted once, not per attempt
+
+
+def test_send_does_not_retry_after_a_tool_ran(conv, monkeypatch):
+    monkeypatch.setattr(agent.time, "sleep", lambda seconds: None)
+    conv.chat = FakeChat([gemini_error(429)], conv=conv, run_tool=True)
+    with pytest.raises(errors.APIError):
+        conv.send("hi")
+    assert conv.chat.calls == 1  # no retry: it could repeat the tool (e.g. a second ticket)
