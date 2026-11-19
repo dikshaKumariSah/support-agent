@@ -152,8 +152,31 @@ def test_cancel_never_signed_up_is_not_cancelled(conv):
     assert membership(1).status == "Active"
 
 
+def show_options_and_reply(conv):
+    """What happens in a real chat before a cancel: Dhriti shows the options, then the customer answers."""
+    conv.get_membership_options()
+    conv.message_count += 1  # the customer's reply, e.g. "Yes, cancel it"
+
+
+def test_cancel_refused_before_options_shown(conv):
+    conv.verified_customer_id = 1
+    result = conv.cancel_membership(reason_category="not_using", reason="I don't use it")
+    assert result["reason"] == "explain_first"
+    assert membership(1).status == "Active"
+
+
+def test_cancel_refused_in_same_turn_as_options(conv):
+    # Chat 4's bug: options and cancel in the same turn, with no customer answer in between.
+    conv.verified_customer_id = 1
+    conv.get_membership_options()
+    result = conv.cancel_membership(reason_category="other", reason="Too expensive")
+    assert result["reason"] == "wait_for_answer"
+    assert membership(1).status == "Active"
+
+
 def test_cancel_membership_success(conv, restore_memberships):
     conv.verified_customer_id = 1
+    show_options_and_reply(conv)
     result = conv.cancel_membership(reason_category="not_using", reason="I don't shop here anymore")
     assert result == {"cancelled": True, "tier": "Silver", "benefits_until": "2027-01-10"}
     row = membership(1)
@@ -163,6 +186,7 @@ def test_cancel_membership_success(conv, restore_memberships):
 
 def test_cancel_twice_finds_no_active_membership(conv, restore_memberships):
     conv.verified_customer_id = 1
+    show_options_and_reply(conv)
     conv.cancel_membership(reason_category="other", reason="Too expensive")
     result = conv.cancel_membership(reason_category="other", reason="Too expensive")
     assert result["reason"] == "no_active_membership"
@@ -170,10 +194,11 @@ def test_cancel_twice_finds_no_active_membership(conv, restore_memberships):
 
 def test_cancel_database_error(conv, monkeypatch):
     real_engine = agent.engine
+    conv.verified_customer_id = 1
+    show_options_and_reply(conv)  # uses the real database, before we break it
     # Point the agent at a database address where nothing is running, so the UPDATE really fails.
     # monkeypatch puts the real engine back automatically after the test.
     monkeypatch.setattr(agent, "engine", create_engine("postgresql+psycopg://nobody:nothing@127.0.0.1:1/none?connect_timeout=2"))
-    conv.verified_customer_id = 1
     result = conv.cancel_membership(reason_category="not_using", reason="I don't use it")
     assert result["reason"] == "database_error"
     with real_engine.connect() as conn:  # check with the real database: nothing changed

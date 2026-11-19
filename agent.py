@@ -50,6 +50,7 @@ Follow this call flow in order:
 7. If no, close with: "Thank you for contacting ElectroMart customer care. You were speaking with Dhriti, ElectroMart's virtual assistant. Have a great day ahead, and take care!"
 
 Always:
+- Follow steps 1 to 4 of the call flow for every concern, including cancellations and fraud: repeat the concern, ask them to confirm it, show empathy, then verify. Never skip these steps, even if the customer gives their details early.
 - Don't use the customer's name until verify_customer returns verified: true, even if they already typed it.
 - Use the customer's first name naturally after verification, not in every sentence.
 - Keep a warm tone, even in short answers.
@@ -62,11 +63,12 @@ Always:
 
 - Unknown charge: Unknown charges are in scope. Never create a ticket for them before calling get_plans. Ask the amount and date first. If the customer only remembers roughly when (like "last year"), don't insist on an exact date. Call get_plans and compare with the membership last_payment_amount, plan price and purchase amount, and their payment, start or order dates. Customers often remember the price before tax, not the exact charge. Check everything in that period and find the closest amount near that date. Then ask only about the amount and date, like: "I found a charge of ₹1,999 on 10 January 2026. Was it this amount?" Don't say what the charge is for in this question. Explain what it was for only after the customer says yes. The membership and the plans are separate: a membership payment is the membership fee, so call it the membership (for example "your Silver membership"), never a protection plan. A plan with source "Membership" is included with the membership and has no charge of its own. If nothing matches, ask where they saw it. If they saw it only in an email or text message, say: it may be a scam, so don't click any links or pay anything. Forward the email to abuse@electromart.example. Check your card statement too. If the charge is there and you didn't make it, contact your bank and dispute it. Card statement and unauthorised: tell them to dispute it with their bank.
 
-- Membership cancellation: Membership cancellations are in scope. Verify the customer first. Then ask why they want to cancel, before doing anything else. Then follow the reason:
+- Membership cancellation: Membership cancellations are in scope. While understanding the concern (step 1), ask why they want to cancel. Then repeat the concern, confirm, show empathy and verify. Then follow the reason:
   - Not using it: call get_membership_options and explain the benefits they are paying for, so they know what they would lose. If they have Gold, suggest moving to Silver instead of cancelling, with its price. If they want to move to Silver, create a ticket for the Membership team to change the tier.
-  - Confused about the membership: call get_membership_options and explain the benefits and what they keep after cancelling.
-  - Never signed up for it: it may be fraud. Don't cancel. Create a ticket for the Fraud team.
-  - If they still want to cancel after that, call cancel_membership with the reason in their own words.
+  - Confused about the membership: call get_membership_options and explain the benefits, and what they keep after cancelling and until when (the renewal date).
+  - Never signed up for it: it may be fraud. Don't cancel. Create a ticket for the Fraud team, with the customer's exact words as the problem (for example "I never signed up for this membership").
+  - Before cancelling, ask exactly one yes/no question: "Just to confirm, do you want to cancel your <tier> membership?" Call cancel_membership only after a clear yes to that question, with the reason in their own words.
+  - If an answer could mean either option (for example "yes" to a question with two choices), don't guess: ask which one they mean.
   - If cancel_membership returns database_error, tell them it couldn't be done right now and create a ticket for the Backend team.
   Only use benefits and prices from get_membership_options. Never promise refunds.
 """
@@ -84,6 +86,8 @@ class Conversation:
         self.customer_messages = ""
         self.tool_calls = []
         self.plans_checked = False  # True only after get_plans really returned the customer's data
+        self.message_count = 0  # how many messages the customer has sent
+        self.options_shown_at = None  # message_count when get_membership_options last returned data
         self.chat = client.chats.create(
             model="gemini-3.5-flash-lite",
             config=types.GenerateContentConfig(
@@ -98,6 +102,7 @@ class Conversation:
     def send(self, message: str) -> str:
         """Pass one customer message to Dhriti and return her reply."""
         self.customer_messages += " " + message
+        self.message_count += 1
         return self.chat.send_message(message).text
 
     # ----- tools Gemini can call -----
@@ -204,10 +209,11 @@ class Conversation:
         }
         if row.tier == "Gold":
             result["cheaper_option"] = {"tier": "Silver", **MEMBERSHIP_GUIDE["Silver"]}
+        self.options_shown_at = self.message_count
         return result
 
     def cancel_membership(self, reason_category: str, reason: str) -> dict:
-        """Cancel the verified customer's active membership. Only call this after you asked the reason, explained the benefits, and the customer still wants to cancel.
+        """Cancel the verified customer's active membership. Only call this after you asked the reason, explained the benefits from get_membership_options, asked "Just to confirm, do you want to cancel your <tier> membership?", and the customer clearly said yes.
         reason_category: "not_using", "confused", "never_signed_up" or "other".
         reason: the customer's reason in their own words."""
         self.tool_calls.append("cancel_membership")
@@ -220,6 +226,13 @@ class Conversation:
                     "note": "Don't cancel. Create a ticket for the Fraud team."}
         if not reason.strip():
             return {"cancelled": False, "reason": "reason_needed", "note": "Ask the customer why they want to cancel."}
+        # The customer must have seen the benefits AND answered after that.
+        if self.options_shown_at is None:
+            return {"cancelled": False, "reason": "explain_first",
+                    "note": "Call get_membership_options and explain the benefits first."}
+        if self.message_count <= self.options_shown_at:
+            return {"cancelled": False, "reason": "wait_for_answer",
+                    "note": "Explain the benefits, ask the confirmation question, and wait for the customer's answer."}
         try:
             with engine.begin() as conn:
                 row = conn.execute(
